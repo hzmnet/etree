@@ -142,6 +142,37 @@ func (d *Document) ReadFromString(s string) error {
 	return err
 }
 
+func WriteToString(ele *Element) (s string, err error) {
+	var b []byte
+	if b, err = WriteToBytes(ele); err != nil {
+		return
+	}
+	return string(b), nil
+}
+
+// WriteToBytes serializes the XML document into a slice of
+// bytes.
+func WriteToBytes(ele *Element) (b []byte, err error) {
+	var buf bytes.Buffer
+	if _, err = _WriteTo(ele, &buf); err != nil {
+		return
+	}
+	return buf.Bytes(), nil
+}
+
+func _WriteTo(ele *Element, w io.Writer) (n int64, err error) {
+	cw := newCountWriter(w)
+	b := bufio.NewWriter(cw)
+	for _, c := range ele.Child {
+		if e, ok := c.(*Element); ok {
+			_WriteTo(e, b)
+		}
+
+	}
+	err, n = b.Flush(), cw.bytes
+	return
+}
+
 // WriteTo serializes an XML document into the writer w. It
 // returns the number of bytes written and any error encountered.
 func (d *Document) WriteTo(w io.Writer) (n int64, err error) {
@@ -219,14 +250,34 @@ func (e *Element) Copy() *Element {
 	return e.dup(parent).(*Element)
 }
 
+func (self *Element) Pop() (ele *Element) {
+	if len(self.Child) > 0 {
+		lTk := self.Child[0]
+		if c, ok := lTk.(*Element); ok {
+			return c
+		}
+		self.Child = self.Child[1:]
+	}
+	return
+}
+
+func (self *Element) Push(ele *Element) {
+	if ele != nil {
+		ele.Parent = self
+		self.Child = append(self.Child, ele)
+	}
+}
+
 func (self *Element) Insert(index int, value *Element) {
 	// Grow the slice by one element.
 	// make([]Token, len(self.Child)+1)
 	// self.Child[0 : len(self.Child)+1]
 	self.Child = append(self.Child, value)
 	// Use copy to move the upper part of the slice out of the way and open a hole.
+
 	copy(self.Child[index+1:], self.Child[index:])
 	// Store the new value.
+	value.Parent = self // set parent
 	self.Child[index] = value
 	// Return the result.
 	return
@@ -537,6 +588,17 @@ func (e *Element) stripIndent() {
 		j++
 	}
 	e.Child = newChild
+}
+
+func NewElement(space, tag string) (ele *Element) {
+	ele = &Element{
+		Space: "",
+		Tag:   tag,
+		Attr:  make([]Attr, 0),
+		Child: make([]Token, 0),
+		//Parent: parent,
+	}
+	return
 }
 
 // dup duplicates the element.
